@@ -1,0 +1,22 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.30204.135
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "OnxCoreTest", "OnxCoreTest\OnxCoreTest.vcxproj", "{B9F6E073-7999-4C5B-B3E2-ACDD53229817}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x86 = Debug|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{B9F6E073-7999-4C5B-B3E2-ACDD53229817}.Debug|x86.ActiveCfg = Debug|Win32
+		{B9F6E073-7999-4C5B-B3E2-ACDD53229817}.Debug|x86.Build.0 = Debug|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {C0EB248F-FEC7-45A2-B944-4700513C26E1}
+	EndGlobalSection
+EndGlobal
