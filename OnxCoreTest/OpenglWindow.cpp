@@ -186,7 +186,8 @@ bool OpenglWindow::generateTiles(glm::vec2 const p1, glm::vec2 const p2, int con
 		{
 		if (depth == 1)
 			_detail = _detail;
-		_tiles.push_back(Tile(p1, p2, glm::vec4(0, 1.f - (lengths[0] / _detail), 0, 1.f)));
+		auto minLen = std::min(std::min(lengths[0], lengths[1]), std::min(lengths[2], lengths[3]));
+		_tiles.push_back(Tile(p1, p2, glm::vec4((depth + 1) / 40.f + 0.5f, 1.f - (minLen / _detail), 0, 1)));
 		return false;
 		}
 
@@ -212,9 +213,6 @@ bool OpenglWindow::generateTiles(glm::vec2 const p1, glm::vec2 const p2, int con
 			result |= generateTiles(corners[i], center, depth + 1);
 		}
 	
-	if (result)
-		_tiles.push_back(Tile(p1, p2, glm::vec4(0.5f, 0.5f, 0.5f, 0.5f)));
-	
 	return result;
 	}
 
@@ -225,6 +223,8 @@ void OpenglWindow::setDebugCamera()
 
 	//depth test on
 	glEnable(GL_DEPTH_TEST);
+	glCullFace(GL_NONE);
+	glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
 	//projection rendering
 	glMatrixMode(GL_PROJECTION);
@@ -249,7 +249,7 @@ void OpenglWindow::setDeviceCamera()
 	//depth test on
 	glEnable(GL_DEPTH_TEST);
 	glCullFace(GL_NONE);
-	glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
 	//projection rendering
 	glMatrixMode(GL_PROJECTION);
