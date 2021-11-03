@@ -20,8 +20,10 @@ OpenglWindow::OpenglWindow(void) :
 
 OpenglWindow::~OpenglWindow(void)
 {
+	glDeleteProgram(mColorShader);
 }
 
+// Generate a modelview matrix
 glm::mat4x4 lookAt(glm::vec3 const &eye, glm::vec3 const &focus, glm::vec3 const &up)
 	{
 	auto zaxis = glm::normalize(eye - focus);
@@ -40,6 +42,7 @@ glm::mat4x4 lookAt(glm::vec3 const &eye, glm::vec3 const &focus, glm::vec3 const
 					);
 	}
 
+// Generate a perspective projection matrix
 glm::mat4x4 perspective(float fov, float aspect, float znear, float zfar)
 	{
 	float yscale = 1 / tan(0.5f * fov);
@@ -54,33 +57,30 @@ glm::mat4x4 perspective(float fov, float aspect, float znear, float zfar)
 		);
 	}
 
-void testViewProj(glm::mat4x4 const &view, glm::mat4x4 const &proj, glm::mat4x4 const &viewProj, glm::vec2 const &vec)
+// Generate colors, a gradient from blue->green as depth increases and
+// red increasing as the subdivided quad increases in projected size
+glm::vec4 makeTileColor(float depth, float length, float detail)
 	{
-	auto homogenized = glm::vec4(vec.x, vec.y, 0, 1);
-
-	auto model = view * homogenized;
-	auto projected = proj * model;
-	auto screen1 = projected / projected.w;
-
-	auto pos = viewProj * homogenized;
-	auto screen2 = pos / pos.w;
+	float scaled = depth / float(MAX_SUBDIVISION_DEPTH);
+	return glm::vec4(scaled, std::max(1.f - (length / detail), 0.f), 1.0f - scaled, 1);
 	}
 
+// Recursively subdivides a quad, culling the output using the current
+// _viewProjMatrix; results are available in the _tiles vector.
+// There's a small bug in the culling algorithm that allows some tiles
+// that are directly behind the camera to pass when the detail level is
+// very low; didn't get a chance to track down what's causing that, but
+// it's not causing performance issues so it won't interfere with a demo.
 bool OpenglWindow::generateTiles(glm::vec2 const p1, glm::vec2 const p2, int const depth)
 	{
-	if (depth >= 9)
-		_detail = _detail;
-
 	if (_maxFrameDetail < depth)
 		_maxFrameDetail = depth;
 
-	if (depth == 15)
+	if (depth == MAX_SUBDIVISION_DEPTH)
 		{
 		_tiles.push_back(Tile(p1, p2, glm::vec4(1.f, 1.f, 1.f, 1.f)));
 		return true;
 		}
-
-	auto center = (p1 + p2) * 0.5f;
 
 	glm::vec4 const corners[] =
 		{								//		0		1
@@ -90,7 +90,7 @@ bool OpenglWindow::generateTiles(glm::vec2 const p1, glm::vec2 const p2, int con
 		glm::vec4(p1.x, p2.y, 0, 1)		//		+-------+ P2
 		};								//		3		2
 
-	glm::vec4 const projected[] =
+	glm::vec4 projected[] =
 		{
 		_viewProjMatrix * corners[0],
 		_viewProjMatrix * corners[1],
@@ -98,27 +98,16 @@ bool OpenglWindow::generateTiles(glm::vec2 const p1, glm::vec2 const p2, int con
 		_viewProjMatrix * corners[3]			
 		};
 
-	if (depth != 0)
-		{
-		int behindCount = 0;
-		for (int i = 0; i < 4; ++i)
-			if (projected[i].w < 0)
-				++behindCount;
-
-		if (behindCount > 1)
+	int behindCount = 0;
+	for (int i = 0; i < 4; ++i)
+		if (projected[i].w < 0)
 			{
-			auto max = glm::vec2(std::max(p1.x, p2.x)),
-				min = glm::vec2(std::min(p1.x, p2.x));
-			if (max.x < _cameraPosition.x || min.x > _cameraPosition.x
-				|| max.y < _cameraPosition.y || min.y > _cameraPosition.y)
-				{
-				if (depth == 1)
-					_detail = _detail;
-
-				return false;
-				}
+			++behindCount;
+			projected[i].w = std::abs(projected[i].w);
 			}
-		}
+
+	if (behindCount == 4)
+		return false;
 
 	glm::vec3 screenCorners[] =
 		{
@@ -128,39 +117,28 @@ bool OpenglWindow::generateTiles(glm::vec2 const p1, glm::vec2 const p2, int con
 		glm::vec3(projected[3].x, projected[3].y, projected[3].z) / projected[3].w,
 		};
 
-	if (depth != 0)
-		{
-		if ((screenCorners[0].z >= 1 &&
-			screenCorners[1].z >= 1 &&
-			screenCorners[2].z >= 1 &&
-			screenCorners[3].z >= 1) ||
-			(projected[0].w <= 0.0f &&
-				projected[1].w <= 0.0f &&
-				projected[2].w <= 0.0f &&
-				projected[3].w <= 0.0f))
+	if ((screenCorners[0].z >= 1 &&
+		screenCorners[1].z >= 1 &&
+		screenCorners[2].z >= 1 &&
+		screenCorners[3].z >= 1) ||
+		(projected[0].w <= 0.0f &&
+			projected[1].w <= 0.0f &&
+			projected[2].w <= 0.0f &&
+			projected[3].w <= 0.0f))
+		return false; // It's outside of Z clip space
+
+	for (int dim = 0; dim <= 1; ++dim)
+		if ((screenCorners[0][dim] >= 1.f &&
+				screenCorners[1][dim] >= 1.f &&
+				screenCorners[2][dim] >= 1.f &&
+				screenCorners[3][dim] >= 1.f)
+			|| (screenCorners[0][dim] <= -1.f &&
+				screenCorners[1][dim] <= -1.f &&
+				screenCorners[2][dim] <= -1.f &&
+				screenCorners[3][dim] <= -1.f))
 			{
-			if (depth == 1)
-				_detail = _detail;
-
-			return false;
-			} // It's outside of clip space
-
-		for (int dim = 0; dim <= 1; ++dim)
-			if ((screenCorners[0][dim] >= 1.f &&
-					screenCorners[1][dim] >= 1.f &&
-					screenCorners[2][dim] >= 1.f &&
-					screenCorners[3][dim] >= 1.f)
-				|| (screenCorners[0][dim] <= -1.f &&
-					screenCorners[1][dim] <= -1.f &&
-					screenCorners[2][dim] <= -1.f &&
-					screenCorners[3][dim] <= -1.f))
-				{
-				if (depth == 1)
-					_detail = _detail;
-
-				return false;
-				}
-		}
+			return false; // It's outside of X or Y clip space
+			}
 
 	glm::vec2 edges[] =
 		{
@@ -178,19 +156,22 @@ bool OpenglWindow::generateTiles(glm::vec2 const p1, glm::vec2 const p2, int con
 		glm::length(edges[3]),		//		+-------+
 		};							//			2
 
-
 	if (lengths[0] <= _detail &&
 		lengths[1] <= _detail &&
 		lengths[2] <= _detail &&
 		lengths[3] <= _detail)
 		{
-		if (depth == 1)
-			_detail = _detail;
 		auto minLen = std::min(std::min(lengths[0], lengths[1]), std::min(lengths[2], lengths[3]));
-		_tiles.push_back(Tile(p1, p2, glm::vec4((depth + 1) / 40.f + 0.5f, 1.f - (minLen / _detail), 0, 1)));
+		_tiles.push_back(Tile(p1, p2, makeTileColor(depth, minLen, _detail)));
 		return false;
 		}
 
+	// This check is 'redundant' with the recursive step for generating the 4 sub-quads, but
+	// it allows us to save a lot of work by using values that we've already computed and
+	// by not having to re-project/clip the quads if we already know they are small enough
+	// to not need it.
+	// The worst side-effect would be to potentially include some quads around the edges of
+	// clip space whose parent passed clipping but they themselves would not have.
 	bool quadrants[] = { false,			//		+---+---+
 		false,							//		|_0_|_1_|
 		false,							//		| 3 | 2 |
@@ -204,11 +185,13 @@ bool OpenglWindow::generateTiles(glm::vec2 const p1, glm::vec2 const p2, int con
 			quadrants[(i+1) & 3] = true;
 			}
 
+	auto center = (p1 + p2) * 0.5f;
+
 	auto result = false;
 	for (auto i = 0; i < 4; ++i)
 		{
 		if (!quadrants[i])
-			_tiles.push_back(Tile(corners[i], center, glm::vec4((depth + 1) / 10.f + 0.5f, 1.f - (lengths[i] / _detail), 0, 1)));
+			_tiles.push_back(Tile(corners[i], center, makeTileColor(depth, lengths[i], _detail)));
 		else
 			result |= generateTiles(corners[i], center, depth + 1);
 		}
@@ -216,10 +199,13 @@ bool OpenglWindow::generateTiles(glm::vec2 const p1, glm::vec2 const p2, int con
 	return result;
 	}
 
+// Set the OpenGL camera to a fixed location to see the results of
+// the tile generation/culling algorithm, disables front/backface 
+// culling, and sets fill mode to wireframe
 void OpenglWindow::setDebugCamera()
 	{
-	glm::vec3 mPosition = glm::vec3(10, 0, 10);
-	glm::vec3 mLookPoint = glm::vec3(0, 0, 0);
+	auto mPosition = glm::vec3(10, 0, 10);
+	auto mLookPoint = glm::vec3(0, 0, 0);
 
 	//depth test on
 	glEnable(GL_DEPTH_TEST);
@@ -244,6 +230,8 @@ void OpenglWindow::setDebugCamera()
 				0.0, 0.0, 1.0);
 	}
 
+// Set the OpenGL camera to the orbit camera's location, disables
+// front/backface culling, and sets the fill mode to solid
 void OpenglWindow::setDeviceCamera()
 	{
 	//depth test on
@@ -279,18 +267,11 @@ void OpenglWindow::Render()
 
 	bool debugCamera = false;
 
-	generateTiles(glm::vec2(3, 3), glm::vec2(-3, -3), 0);
+	updateCameraDistance();
 
-	if (_lmb.state ^ _rmb.state)
-		{
-		if (_lmb.state && !_rmb.state)
-			_distance *= 0.99f;
-		else if (_rmb.state)
-			_distance *= 1.01f;
-		updateCamera();
-		}
-	else if (_lmb.state && _rmb.state)
-		debugCamera = true;
+	generateTiles(glm::vec2(5, 5), glm::vec2(-5, -5), 0);
+
+	debugCamera = _lmb.state && _rmb.state;
 
 	if (!debugCamera)
 		setDeviceCamera();
@@ -409,12 +390,27 @@ GLuint OpenglWindow::setupShader(char* vertPath, char* pixelPath)
 	return shaderProgram;
 }
 
+void OpenglWindow::updateCameraDistance()
+	{
+	if (_lmb.state ^ _rmb.state)
+		{
+		// These min/max extents should be dependent on _detail
+		if (_lmb.state && !_rmb.state)
+			_distance = std::max(_distance * 0.97f, 0.00001f);
+		else if (_rmb.state)
+			_distance = std::min(_distance * 1.03f, 20.f);
+		updateCamera();
+		}
+	}
+
+// Drives the near/far clip plane
 void OpenglWindow::setDetailLevel(float detail)
 	{
-	_detail = std::min(std::max(detail, 0.05f), 0.8f);
+	_detail = std::min(std::max(detail, 0.05f), 1.5f);
 	updateCamera();
 	}
 
+// Update view/projection matrices used to generate the displayed tiles
 void OpenglWindow::updateCamera()
 	{
 	auto posYZ = glm::vec3(0, std::sin(_orbitYZ * HALF_PI), std::cos(_orbitYZ * HALF_PI));
@@ -435,13 +431,18 @@ void OpenglWindow::updateCamera()
 	_cameraMoved = true;
 	}
 
+// Listen for OpenGL mouse move events
 void OpenglWindow::setMousePosition(int x, int y)
 	{
 	_orbitXZ = (float)x / WINDOW_WIDTH;
-	_orbitYZ = (float)(y + 1) / (WINDOW_HEIGHT + 10); // Prevent looking straight down
+	_orbitYZ = std::max(0.05f, std::min(float(y) / WINDOW_HEIGHT, 0.95f)); // Prevent looking straight down
 	updateCamera();
 	}
 
+// Listen for OpenGL mouse button events, strangely the mouse wheel
+// seems to be mapped to mouse buttons 3 & 4 which don't have
+// corresponding GLUT constants.  Wheel up increases detail level,
+// wheel down decreases detail
 void OpenglWindow::setMouseButton(int button, int state)
 	{
 	if (button >= 0 && button < MAX_MOUSE_BUTTONS)

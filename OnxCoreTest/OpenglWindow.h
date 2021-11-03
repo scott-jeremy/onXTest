@@ -19,6 +19,7 @@ constexpr float PI = 3.141592653589793238463f;
 constexpr float HALF_PI = PI * 0.5f;
 constexpr int WINDOW_WIDTH = 1280;
 constexpr int WINDOW_HEIGHT = 720;
+constexpr int MAX_SUBDIVISION_DEPTH = 20;
 
 struct MouseButton
 	{
@@ -40,7 +41,12 @@ private:
 	float _orbitXZ,
 			_orbitYZ,
 			_distance = 10,
-			_detail = 0.2f;
+			_detail = 0.2f,
+			_fov = 45.0f,
+			_aspect = float(WINDOW_WIDTH) / float(WINDOW_HEIGHT),
+			_nearClip = .5f,
+			_farClip = 50.f;
+
 	bool _cameraMoved = true;
 	int _maxFrameDetail = 0;
 
@@ -59,12 +65,8 @@ private:
 	glm::vec3 _cameraPosition,
 		_focusPosition;
 
-	float _fov = 45.0f;
-	float _aspect = float(WINDOW_WIDTH) / float(WINDOW_HEIGHT);
-	float _nearClip = .5f;
-	float _farClip = 50.f;
-
 	void updateCamera();
+	void updateCameraDistance();
 	void setDetailLevel(float detail);
 	bool generateTiles(glm::vec2 const p1, glm::vec2 const p2, int const depth);
 	void setDeviceCamera();
